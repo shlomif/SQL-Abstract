@@ -1,8 +1,14 @@
 Revision history for SQL::Abstract
 
+revision 1.72  2010-12-21
+----------------------------
+    - Extra checks of search arguments for possible SQL injection attacks
+    - Remove excess parentheses in debug SQL
     - Fix parsing of foo.* in SQLA::Tree
     - Fix bindtype fail when using -between with arrayrefref literals
     - Add handling for NULL for -in
+    - The -nest operator has entered semi-deprecated status and has been
+      undocumented. Please do not use it in new code
 
 revision 1.71  2010-11-09
 ----------------------------

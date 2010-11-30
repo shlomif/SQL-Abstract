@@ -15,7 +15,7 @@ use Scalar::Util ();
 # GLOBALS
 #======================================================================
 
-our $VERSION  = '1.71';
+our $VERSION  = '1.72';
 
 # This would confuse some packagers
 $VERSION = eval $VERSION if $VERSION =~ /_/; # numify for warning-free dev releases
@@ -95,15 +95,39 @@ sub new {
 
   # special operators
   $opt{special_ops} ||= [];
+  # regexes are applied in order, thus push after user-defines
   push @{$opt{special_ops}}, @BUILTIN_SPECIAL_OPS;
 
   # unary operators
   $opt{unary_ops} ||= [];
   push @{$opt{unary_ops}}, @BUILTIN_UNARY_OPS;
 
+  # rudimentary saniy-check for user supplied bits treated as functions/operators
+  # If a purported  function matches this regular expression, an exception is thrown.
+  # Literal SQL is *NOT* subject to this check, only functions (and column names
+  # when quoting is not in effect)
+
+  # FIXME
+  # need to guard against ()'s in column names too, but this will break tons of
+  # hacks... ideas anyone?
+  $opt{injection_guard} ||= qr/
+    \;
+      |
+    ^ \s* go \s
+  /xmi;
+
   return bless \%opt, $class;
 }
 
+
+sub _assert_pass_injection_guard {
+  if ($_[1] =~ $_[0]->{injection_guard}) {
+    my $class = ref $_[0];
+    puke "Possible SQL injection attempt '$_[1]'. If this is indeed a part of the "
+     . "desired SQL use literal SQL ( \'...' or \[ '...' ] ) or supply your own "
+     . "{injection_guard} attribute to ${class}->new()"
+  }
+}
 
 
 #======================================================================
@@ -536,6 +560,8 @@ sub _where_unary_op {
 
   $self->debug("Generic unary OP: $op - recursing as function");
 
+  $self->_assert_pass_injection_guard($op);
+
   my ($sql, @bind) = $self->_SWITCH_refkind ($rhs, {
     SCALAR =>   sub {
       puke "Illegal use of top-level '$op'"
@@ -574,15 +600,23 @@ sub _where_op_ANDOR {
     },
 
     SCALARREF  => sub {
-      puke "-$op => \\\$scalar not supported, use -nest => ...";
+      puke "-$op => \\\$scalar makes little sense, use " .
+        ($op =~ /^or/i 
+          ? '[ \$scalar, \%rest_of_conditions ] instead'
+          : '-and => [ \$scalar, \%rest_of_conditions ] instead'
+        );
     },
 
     ARRAYREFREF => sub {
-      puke "-$op => \\[..] not supported, use -nest => ...";
+      puke "-$op => \\[...] makes little sense, use " .
+        ($op =~ /^or/i 
+          ? '[ \[...], \%rest_of_conditions ] instead'
+          : '-and => [ \[...], \%rest_of_conditions ] instead'
+        );
     },
 
     SCALAR => sub { # permissively interpreted as SQL
-      puke "-$op => 'scalar' not supported, use -nest => \\'scalar'";
+      puke "-$op => \$value makes little sense, use -bool => \$value instead";
     },
 
     UNDEF => sub {
@@ -685,6 +719,8 @@ sub _where_hashpair_HASHREF {
     $op =~ s/^-//;        # remove possible initial dash
     $op =~ s/^\s+|\s+$//g;# remove leading/trailing space
     $op =~ s/\s+/ /g;     # compress whitespace
+
+    $self->_assert_pass_injection_guard($op);
 
     # so that -not_foo works correctly
     $op =~ s/^not_/NOT /i;
@@ -1209,7 +1245,10 @@ sub _quote {
   return '' unless defined $_[1];
   return ${$_[1]} if ref($_[1]) eq 'SCALAR';
 
-  return $_[1] unless $_[0]->{quote_char};
+  unless ($_[0]->{quote_char}) {
+    $_[0]->_assert_pass_injection_guard($_[1]);
+    return $_[1];
+  }
 
   my $qref = ref $_[0]->{quote_char};
   my ($l, $r);
@@ -1833,6 +1872,20 @@ so that tables and column names can be individually quoted like this:
 
   SELECT `table`.`one_field` FROM `table` WHERE `table`.`other_field` = 1
 
+=item injection_guard
+
+A regular expression C<qr/.../> that is applied to any C<-function> and unquoted
+column name specified in a query structure. This is a safety mechanism to avoid
+injection attacks when mishandling user input e.g.:
+
+  my %condition_as_column_value_pairs = get_values_from_user();
+  $sqla->select( ... , \%condition_as_column_value_pairs );
+
+If the expression matches an exception is thrown. Note that literal SQL
+supplied via C<\'...'> or C<\['...']> is B<not> checked in any way.
+
+Defaults to checking for C<;> and the C<GO> keyword (TransactSQL)
+
 =item array_datatypes
 
 When this option is true, arrayrefs in INSERT or UPDATE are
@@ -2321,41 +2374,25 @@ This data structure would create the following:
     @bind = ('nwiger', 'pending', 'dispatched', 'robot', 'unassigned');
 
 
-There is also a special C<-nest>
-operator which adds an additional set of parens, to create a subquery.
-For example, to get something like this:
-
-    $stmt = "WHERE user = ? AND ( workhrs > ? OR geo = ? )";
-    @bind = ('nwiger', '20', 'ASIA');
-
-You would do:
-
-    my %where = (
-         user => 'nwiger',
-        -nest => [ workhrs => {'>', 20}, geo => 'ASIA' ],
-    );
-
-
-Finally, clauses in hashrefs or arrayrefs can be
-prefixed with an C<-and> or C<-or> to change the logic
-inside :
+Clauses in hashrefs or arrayrefs can be prefixed with an C<-and> or C<-or>
+to change the logic inside :
 
     my @where = (
          -and => [
             user => 'nwiger',
-            -nest => [
-                -and => [workhrs => {'>', 20}, geo => 'ASIA' ],
-                -and => [workhrs => {'<', 50}, geo => 'EURO' ]
+            [
+                -and => [ workhrs => {'>', 20}, geo => 'ASIA' ],
+                -or => { workhrs => {'<', 50}, geo => 'EURO' },
             ],
         ],
     );
 
 That would yield:
 
-    WHERE ( user = ? AND
-          ( ( workhrs > ? AND geo = ? )
-         OR ( workhrs < ? AND geo = ? ) ) )
-
+    WHERE ( user = ? AND (
+               ( workhrs > ? AND geo = ? )
+            OR ( workhrs < ? OR geo = ? )
+          ) )
 
 =head2 Algebraic inconsistency, for historical reasons
 
@@ -2507,10 +2544,10 @@ hash, like an EXISTS subquery :
 
   my ($sub_stmt, @sub_bind)
      = $sql->select("t1", "*", {c1 => 1, c2 => \"> t0.c0"});
-  my %where = (
+  my %where = ( -and => [
     foo   => 1234,
-    -nest => \["EXISTS ($sub_stmt)" => @sub_bind],
-  );
+    \["EXISTS ($sub_stmt)" => @sub_bind],
+  ]);
 
 which yields
 
@@ -2526,15 +2563,6 @@ Writing C<< c2 => {">" => "t0.c0"} >> would have generated
 C<< c2 > ? >> with bind value C<"t0.c0"> ... not exactly
 what we wanted here.
 
-Another use of the subquery technique is when some SQL clauses need
-parentheses, as it often occurs with some proprietary SQL extensions
-like for example fulltext expressions, geospatial expressions,
-NATIVE clauses, etc. Here is an example of a fulltext query in MySQL :
-
-  my %where = (
-    -nest => \["MATCH (col1, col2) AGAINST (?)" => qw/apples/]
-  );
-
 Finally, here is an example where a subquery is used
 for expressing unary negation:
 
@@ -2543,7 +2571,7 @@ for expressing unary negation:
   $sub_stmt =~ s/^ where //i; # don't want "WHERE" in the subclause
   my %where = (
         lname  => {like => '%son%'},
-        -nest  => \["NOT ($sub_stmt)" => @sub_bind],
+        \["NOT ($sub_stmt)" => @sub_bind],
     );
 
 This yields
@@ -2889,7 +2917,7 @@ so I have no idea who they are! But the people I do know are:
     Mike Fragassi (enhancements to "BETWEEN" and "LIKE")
     Dan Kubb (support for "quote_char" and "name_sep")
     Guillermo Roditi (patch to cleanup "IN" and "BETWEEN", fix and tests for _order_by)
-    Laurent Dami (internal refactoring, multiple -nest, extensible list of special operators, literal SQL)
+    Laurent Dami (internal refactoring, extensible list of special operators, literal SQL)
     Norbert Buchmuller (support for literal SQL in hashpair, misc. fixes & tests)
     Peter Rabbitson (rewrite of SQLA::Test, misc. fixes & tests)
     Oliver Charles (support for "RETURNING" after "INSERT")
