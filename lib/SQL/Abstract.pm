@@ -22,12 +22,17 @@ $VERSION = eval $VERSION if $VERSION =~ /_/; # numify for warning-free dev relea
 
 our $AUTOLOAD;
 
+my @_funcall_ops = 
+(
+  {regex => qr/^ funcall $/ix, handler => '_where_field_FUNCALL'},
+);
+
 # special operators (-in, -between). May be extended/overridden by user.
 # See section WHERE: BUILTIN SPECIAL OPERATORS below for implementation
 my @BUILTIN_SPECIAL_OPS = (
   {regex => qr/^ (?: not \s )? between $/ix, handler => '_where_field_BETWEEN'},
   {regex => qr/^ (?: not \s )? in      $/ix, handler => '_where_field_IN'},
-  {regex => qr/^ (?: not \s )? funcall $/ix, handler => '_where_field_FUNCALL'},
+  @_funcall_ops,
 );
 
 # unaryish operators - key maps to handler
@@ -37,7 +42,7 @@ my @BUILTIN_UNARY_OPS = (
   { regex => qr/^ or   (?: [_\s]? \d+ )? $/xi, handler => '_where_op_ANDOR' },
   { regex => qr/^ nest (?: [_\s]? \d+ )? $/xi, handler => '_where_op_NEST' },
   { regex => qr/^ (?: not \s )? bool     $/xi, handler => '_where_op_BOOL' },
-  { regex => qr/^ (?: not \s )? funcall  $/ix, handler => '_where_field_FUNCALL'},
+  @_funcall_ops,
 );
 
 #======================================================================
