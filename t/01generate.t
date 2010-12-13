@@ -533,7 +533,7 @@ my @tests =
       {
               func   => 'select',
               args   => ['jeff', '*', 
-                  { '-funcall' => ['substr', 1010, 5, 6,], },
+                  { '-func' => ['substr', 1010, 5, 6,], },
               ],
               stmt   => 'SELECT * FROM jeff WHERE (substr(?, ?, ?))',
               stmt_q => 'SELECT * FROM `jeff` WHERE (substr(?, ?, ?))',

@@ -22,9 +22,9 @@ $VERSION = eval $VERSION if $VERSION =~ /_/; # numify for warning-free dev relea
 
 our $AUTOLOAD;
 
-my @_funcall_ops = 
+my @_func_ops = 
 (
-  {regex => qr/^ funcall $/ix, handler => '_where_field_FUNCALL'},
+  {regex => qr/^ func $/ix, handler => '_where_field_FUNC'},
 );
 
 # special operators (-in, -between). May be extended/overridden by user.
@@ -32,7 +32,7 @@ my @_funcall_ops =
 my @BUILTIN_SPECIAL_OPS = (
   {regex => qr/^ (?: not \s )? between $/ix, handler => '_where_field_BETWEEN'},
   {regex => qr/^ (?: not \s )? in      $/ix, handler => '_where_field_IN'},
-  @_funcall_ops,
+  @_func_ops,
 );
 
 # unaryish operators - key maps to handler
@@ -42,7 +42,7 @@ my @BUILTIN_UNARY_OPS = (
   { regex => qr/^ or   (?: [_\s]? \d+ )? $/xi, handler => '_where_op_ANDOR' },
   { regex => qr/^ nest (?: [_\s]? \d+ )? $/xi, handler => '_where_op_NEST' },
   { regex => qr/^ (?: not \s )? bool     $/xi, handler => '_where_op_BOOL' },
-  @_funcall_ops,
+  @_func_ops,
 );
 
 #======================================================================
@@ -937,7 +937,7 @@ sub _where_field_BETWEEN {
   return ($sql, @bind)
 }
 
-sub _where_field_FUNCALL {
+sub _where_field_FUNC {
   my ($self, $k, $vals) = @_;
 
   my $label       = $self->_convert($self->_quote($k));
@@ -950,10 +950,10 @@ sub _where_field_FUNCALL {
       ($s, @b);
     },
     SCALARREF => sub {
-      puke "special op 'funcall' accepts an arrayref with more than one value."
+      puke "special op 'func' accepts an arrayref with more than one value."
     },
     ARRAYREF => sub {
-      puke "special op 'funcall' accepts an arrayref with more than one value."
+      puke "special op 'func' accepts an arrayref with more than one value."
         if @$vals < 1;
 
       my (@all_sql, @all_bind);
@@ -962,7 +962,7 @@ sub _where_field_FUNCALL {
 
       if ($func =~ m{\W})
       {
-        puke "Function in -funcall may only contain alphanumeric characters.";
+        puke "Function in -func may only contain alphanumeric characters.";
       }
 
       foreach my $val (@rest_of_vals) {
@@ -996,7 +996,7 @@ sub _where_field_FUNCALL {
       );
     },
     FALLBACK => sub {
-      puke "special op 'funcall' accepts an arrayref with two values, or a single literal scalarref/arrayref-ref";
+      puke "special op 'func' accepts an arrayref with two values, or a single literal scalarref/arrayref-ref";
     },
   });
 
@@ -2243,12 +2243,12 @@ Would give you:
 These are the two builtin "special operators"; but the
 list can be expanded : see section L</"SPECIAL OPERATORS"> below.
 
-Another operator is C<-funcall> that allows you to call SQL functions with
+Another operator is C<-func> that allows you to call SQL functions with
 arguments. It receives an array reference containing the function name
 as the 0th argument and the other arguments being its parameters. For example:
     
     my %where = {
-      -funcall => ['substr', 'Hello', 50, 5],
+      -func => ['substr', 'Hello', 50, 5],
     };
 
 Would give you:
