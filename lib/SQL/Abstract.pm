@@ -997,17 +997,17 @@ sub _where_generic_FUNC {
       puke $error;
     },
     ARRAYREF => sub {
-      puke $error
+      puke $error;
+    },
+    ARRAYREF => sub {
+      puke "special op 'funcall' accepts an arrayref with more than one value."
         if @$vals < 1;
 
       my (@all_sql, @all_bind);
 
       my ($func,@rest_of_vals) = @$vals;
 
-      if ($func =~ m{\W})
-      {
-        puke "Function in -func may only contain alphanumeric characters.";
-      }
+      $self->_assert_pass_injection_guard($func);
 
       foreach my $val (@rest_of_vals) {
         my ($sql, @bind) = $self->_SWITCH_refkind($val, {
@@ -1045,6 +1045,7 @@ sub _where_generic_FUNC {
   });
 
   my $sql = $k ? "( $label = $clause )" : "( $clause )";
+
   return ($sql, @bind)
 }
 
