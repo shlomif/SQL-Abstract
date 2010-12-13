@@ -22,17 +22,12 @@ $VERSION = eval $VERSION if $VERSION =~ /_/; # numify for warning-free dev relea
 
 our $AUTOLOAD;
 
-my @_func_ops = 
-(
-  {regex => qr/^ func $/ix, handler => '_where_field_FUNC'},
-);
-
 # special operators (-in, -between). May be extended/overridden by user.
 # See section WHERE: BUILTIN SPECIAL OPERATORS below for implementation
 my @BUILTIN_SPECIAL_OPS = (
   {regex => qr/^ (?: not \s )? between $/ix, handler => '_where_field_BETWEEN'},
   {regex => qr/^ (?: not \s )? in      $/ix, handler => '_where_field_IN'},
-  @_func_ops,
+  {regex => qr/^ func $/ix, handler => '_where_field_FUNC'},
 );
 
 # unaryish operators - key maps to handler
@@ -42,7 +37,7 @@ my @BUILTIN_UNARY_OPS = (
   { regex => qr/^ or   (?: [_\s]? \d+ )? $/xi, handler => '_where_op_ANDOR' },
   { regex => qr/^ nest (?: [_\s]? \d+ )? $/xi, handler => '_where_op_NEST' },
   { regex => qr/^ (?: not \s )? bool     $/xi, handler => '_where_op_BOOL' },
-  @_func_ops,
+  {regex => qr/^ func $/ix, handler => '_where_op_FUNC'},
 );
 
 #======================================================================
@@ -938,10 +933,17 @@ sub _where_field_BETWEEN {
 }
 
 sub _where_field_FUNC {
+  my ($self, $k, $op, $vals) = @_;
+
+  return $self->_where_op_FUNC($k,$vals);
+}
+
+sub _where_op_FUNC {
   my ($self, $k, $vals) = @_;
 
   my $label       = $self->_convert($self->_quote($k));
   my $placeholder = $self->_convert('?');
+  my $error = "special op 'func' accepts an arrayref with more than one value.";
 
   my ($clause, @bind) = $self->_SWITCH_refkind($vals, {
     ARRAYREFREF => sub {
@@ -950,10 +952,10 @@ sub _where_field_FUNC {
       ($s, @b);
     },
     SCALARREF => sub {
-      puke "special op 'func' accepts an arrayref with more than one value."
+      puke $error;
     },
     ARRAYREF => sub {
-      puke "special op 'func' accepts an arrayref with more than one value."
+      puke $error
         if @$vals < 1;
 
       my (@all_sql, @all_bind);
@@ -996,7 +998,7 @@ sub _where_field_FUNC {
       );
     },
     FALLBACK => sub {
-      puke "special op 'func' accepts an arrayref with two values, or a single literal scalarref/arrayref-ref";
+      puke $error; 
     },
   });
 

@@ -539,6 +539,22 @@ my @tests =
               stmt_q => 'SELECT * FROM `jeff` WHERE (substr(?, ?, ?))',
               bind => [1010,5,6],
       },
+      
+      {
+              func   => 'select',
+              args   => ['jeff', '*', 
+                  { 'a' => {
+                        -func => 
+                        [ 'foo', { -func => [ 'max', 'bar'], }, 
+                            \['(SELECT crate FROM baz)'],
+                        ],
+                      },
+                  }
+              ],
+              stmt   => 'SELECT * FROM jeff WHERE a = foo(max(?), (SELECT crate FROM baz))',
+              stmt_q => 'SELECT * FROM `jeff` WHERE `a` = foo(max(?), (SELECT crate FROM baz))',
+              bind => ['bar'],
+      },
 );
 
 
