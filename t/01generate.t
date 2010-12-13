@@ -10,7 +10,8 @@ use SQL::Abstract::Test import => ['is_same_sql_bind'];
 
 use SQL::Abstract;
 
-my @tests = (
+my @tests =
+(
       {
               func   => 'select',
               args   => ['test', '*'],
@@ -528,6 +529,15 @@ my @tests = (
               stmt   => 'SELECT * FROM test WHERE ( Y = ( MAX( LENGTH( MIN ? ) ) ) )',
               stmt_q => 'SELECT * FROM `test` WHERE ( `Y` = ( MAX( LENGTH( MIN ? ) ) ) )',
               bind   => [[Y => 'x']],
+      },
+      {
+              func   => 'select',
+              args   => ['jeff', '*', 
+                  { '-funcall' => ['substr', 1010, 5, 6,], },
+              ],
+              stmt   => 'SELECT * FROM jeff WHERE (substr(?, ?, ?))',
+              stmt_q => 'SELECT * FROM `jeff` WHERE (substr(?, ?, ?))',
+              bind => [1010,5,6],
       },
 );
 

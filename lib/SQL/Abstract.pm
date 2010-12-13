@@ -27,6 +27,7 @@ our $AUTOLOAD;
 my @BUILTIN_SPECIAL_OPS = (
   {regex => qr/^ (?: not \s )? between $/ix, handler => '_where_field_BETWEEN'},
   {regex => qr/^ (?: not \s )? in      $/ix, handler => '_where_field_IN'},
+  {regex => qr/^ (?: not \s )? funcall $/ix, handler => '_where_field_FUNCALL'},
 );
 
 # unaryish operators - key maps to handler
@@ -36,6 +37,7 @@ my @BUILTIN_UNARY_OPS = (
   { regex => qr/^ or   (?: [_\s]? \d+ )? $/xi, handler => '_where_op_ANDOR' },
   { regex => qr/^ nest (?: [_\s]? \d+ )? $/xi, handler => '_where_op_NEST' },
   { regex => qr/^ (?: not \s )? bool     $/xi, handler => '_where_op_BOOL' },
+  { regex => qr/^ (?: not \s )? funcall  $/ix, handler => '_where_field_FUNCALL'},
 );
 
 #======================================================================
@@ -930,6 +932,72 @@ sub _where_field_BETWEEN {
   return ($sql, @bind)
 }
 
+sub _where_field_FUNCALL {
+  my ($self, $k, $vals) = @_;
+
+  my $label       = $self->_convert($self->_quote($k));
+  my $placeholder = $self->_convert('?');
+
+  my ($clause, @bind) = $self->_SWITCH_refkind($vals, {
+    ARRAYREFREF => sub {
+      my ($s, @b) = @$$vals;
+      $self->_assert_bindval_matches_bindtype(@b);
+      ($s, @b);
+    },
+    SCALARREF => sub {
+      puke "special op 'funcall' accepts an arrayref with more than one value."
+    },
+    ARRAYREF => sub {
+      puke "special op 'funcall' accepts an arrayref with more than one value."
+        if @$vals < 1;
+
+      my (@all_sql, @all_bind);
+
+      my ($func,@rest_of_vals) = @$vals;
+
+      if ($func =~ m{\W})
+      {
+        puke "Function in -funcall may only contain alphanumeric characters.";
+      }
+
+      foreach my $val (@rest_of_vals) {
+        my ($sql, @bind) = $self->_SWITCH_refkind($val, {
+           SCALAR => sub {
+             return ($placeholder, $self->_bindtype($k, $val) );
+           },
+           SCALARREF => sub {
+             return $$val;
+           },
+           ARRAYREFREF => sub {
+             my ($sql, @bind) = @$$val;
+             $self->_assert_bindval_matches_bindtype(@bind);
+             return ($sql, @bind);
+           },
+           HASHREF => sub {
+             my ($func, $arg, @rest) = %$val;
+             puke ("Only simple { -func => arg } functions accepted as sub-arguments to BETWEEN")
+               if (@rest or $func !~ /^ \- (.+)/x);
+             local $self->{_nested_func_lhs} = $k;
+             $self->_where_unary_op ($1 => $arg);
+           }
+        });
+        push @all_sql, $sql;
+        push @all_bind, @bind;
+      }
+
+      return (
+        ("$func(" . (join ",", @all_sql) . ")"),
+        @all_bind
+      );
+    },
+    FALLBACK => sub {
+      puke "special op 'funcall' accepts an arrayref with two values, or a single literal scalarref/arrayref-ref";
+    },
+  });
+
+  my $sql = "( $clause )";
+  return ($sql, @bind)
+}
 
 sub _where_field_IN {
   my ($self, $k, $op, $vals) = @_;
@@ -2169,6 +2237,19 @@ Would give you:
 
 These are the two builtin "special operators"; but the
 list can be expanded : see section L</"SPECIAL OPERATORS"> below.
+
+Another operator is C<-funcall> that allows you to call SQL functions with
+arguments. It receives an array reference containing the function name
+as the 0th argument and the other arguments being its parameters. For example:
+    
+    my %where = {
+      -funcall => ['substr', 'Hello', 50, 5],
+    };
+
+Would give you:
+
+   $stmt = "WHERE (substr(?,?,?))";
+   @bind = ("Hello", 50, 5);
 
 =head2 Unary operators: bool
 
