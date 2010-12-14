@@ -554,6 +554,13 @@ my @tests =
               stmt_q => 'SELECT * FROM `jeff` WHERE (`a` = foo((max(?)), (SELECT crate FROM baz)))',
               bind => ['bar'],
       },
+      {
+              func   => 'update',
+              args   => ['test', {'b' => { -func => ['max', 500]}}, { a => { -func => ['max', \'a',]}, b => { -func => ['present', \'t', 'sophie', 30] },},],
+              stmt   => 'UPDATE test SET b = max(?) WHERE ((a = max(a)) AND (b = present(t, ?, ?)))',
+              stmt_q  => 'UPDATE `test` SET `b` = max(?) WHERE ((`a` = max(a)) AND (`b` = present(t, ?, ?)))',
+              bind   => [500, 'sophie', 30],
+      },
 );
 
 plan tests => scalar(grep { !$_->{warning_like} } @tests) * 2
