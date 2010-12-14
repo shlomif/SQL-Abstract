@@ -539,7 +539,6 @@ my @tests =
               stmt_q => 'SELECT * FROM `jeff` WHERE (substr(?, ?, ?))',
               bind => [1010,5,6],
       },
-      
       {
               func   => 'select',
               args   => ['jeff', '*', 
@@ -551,12 +550,11 @@ my @tests =
                       },
                   }
               ],
-              stmt   => 'SELECT * FROM jeff WHERE a = foo(max(?), (SELECT crate FROM baz))',
-              stmt_q => 'SELECT * FROM `jeff` WHERE `a` = foo(max(?), (SELECT crate FROM baz))',
+              stmt   => 'SELECT * FROM jeff WHERE (a = foo((max(?)), (SELECT crate FROM baz)))',
+              stmt_q => 'SELECT * FROM `jeff` WHERE (`a` = foo((max(?)), (SELECT crate FROM baz)))',
               bind => ['bar'],
       },
 );
-
 
 plan tests => scalar(grep { !$_->{warning_like} } @tests) * 2
             + scalar(grep { $_->{warning_like} } @tests) * 4;

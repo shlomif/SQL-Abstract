@@ -935,10 +935,16 @@ sub _where_field_BETWEEN {
 sub _where_field_FUNC {
   my ($self, $k, $op, $vals) = @_;
 
-  return $self->_where_op_FUNC($k,$vals);
+  return $self->_where_generic_FUNC($k,$vals);
 }
 
 sub _where_op_FUNC {
+  my ($self, $k, $vals) = @_;
+
+  return $self->_where_generic_FUNC('', $vals);
+}
+
+sub _where_generic_FUNC {
   my ($self, $k, $vals) = @_;
 
   my $label       = $self->_convert($self->_quote($k));
@@ -1002,7 +1008,7 @@ sub _where_op_FUNC {
     },
   });
 
-  my $sql = "( $clause )";
+  my $sql = $k ? "( $label = $clause )" : "( $clause )";
   return ($sql, @bind)
 }
 
