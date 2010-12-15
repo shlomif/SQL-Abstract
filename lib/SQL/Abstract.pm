@@ -37,7 +37,7 @@ my @BUILTIN_UNARY_OPS = (
   { regex => qr/^ or   (?: [_\s]? \d+ )? $/xi, handler => '_where_op_ANDOR' },
   { regex => qr/^ nest (?: [_\s]? \d+ )? $/xi, handler => '_where_op_NEST' },
   { regex => qr/^ (?: not \s )? bool     $/xi, handler => '_where_op_BOOL' },
-  {regex => qr/^ func $/ix, handler => '_where_op_FUNC'},
+  { regex => qr/^ func $/ix,                   handler => '_where_op_FUNC' },
 );
 
 #======================================================================
